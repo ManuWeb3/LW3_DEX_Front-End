@@ -35,7 +35,10 @@ export const removeLiquidity = async (signer, removeLPTokensWei) => {
   // removeLPTokenWei - done
   // _totalSupply from totalSupply() of ERC20 inherited in Exchange.sol
   // _ethBalance and cryptoDevTokenReserve - denominators to get both the numerators of...
-  // eth and CD tokens to be sent to the user upon burn(CD LP)
+  // eth and CD tokens to be sent to the user upon burn(CD LP) :
+  
+  // "The Golden Formulae"
+
   export const getTokensAfterRemove = async (
     provider,
     removeLPTokenWei,
@@ -51,7 +54,26 @@ export const removeLiquidity = async (signer, removeLPTokensWei) => {
         );
         // Get the total supply of `Crypto Dev` LP tokens
     const _totalSupply = await exchangeContract.totalSupply();
-            // -------------------- pending----------------------
+    // Here we are using the BigNumber methods of multiplication and division
+    // The amount of Eth that would be sent back to the user after he redeems/burns the LP token
+    // is calculated based on a ratio,
+    // Ratio is -> (amount of Eth that would be sent back to the user / Eth reserve) = (LP tokens withdrawn) / (total supply of LP tokens)
+    // By some maths we get -> (amount of Eth that would be sent back to the user) = (Eth Reserve * LP tokens withdrawn) / (total supply of LP tokens)
+    // Similarly we also maintain a ratio for the `CD` tokens, so here in our case
+    // Ratio is -> (amount of CD tokens sent back to the user / CD Token reserve) = (LP tokens withdrawn) / (total supply of LP tokens)
+    // Then (amount of CD tokens sent back to the user) = (CD token reserve * LP tokens withdrawn) / (total supply of LP tokens)
+    
+    // Ratio # 1 for Ether:
+    const _removeEther = _ethBalance.mul(removeLPTokenWei).div(_totalSupply);
+    // Ratio # 2 for CD Tokens:
+    const _removeCD = cryptoDevTokenReserve.mul(removeLPTokenWei).div(_totalSupply);
+
+    // done, return
+    return {
+      _removeEther,
+      _removeCD,
+    };
+
     }
     catch (err) {
         console.error(err);
