@@ -14,9 +14,9 @@ import {
  * constant
  */
 export const addLiquidity = async (
-    signer,
-    addCDAmountWei,
-    addEtherAmountWei
+    signer,           // setter
+    addCDAmountWei,   // CD Token amount
+    addEtherAmountWei // ETH amount, as both ETH and CD Token need to be added to the pool in the same txn by user/LP
   ) => {
     try {
       // create a new instance of the token contract

@@ -89,28 +89,38 @@ export default function Home() {
    * getAmounts call various functions to retrive amounts for ethbalance,
    * LP tokens etc
    */
+  
+  // will set ReactSV EVERYTIME when swap / AddLiquidity / RemoveLiquidity / walletConnect happens
   const getAmounts = async () => {
     try {
+      // in the same f(), we have a getter - provider and a setter - signer
+      // added more flexibility to use either as per requirement
       const provider = await getProviderOrSigner(false);
-      const signer = await getProviderOrSigner(true);
+      const signer = await getProviderOrSigner(true);   // to get user's address (whose wallet is connected)
       const address = await signer.getAddress();
-      // get the amount of eth in the user's account
+      // ----------------------
+      // get the amount of eth in the user's account (utils - getAmounts.js)
       const _ethBalance = await getEtherBalance(provider, address);
-      // get the amount of `Crypto Dev` tokens held by the user
+      // get the amount of `Crypto Dev` tokens held by the user (utils - getAmounts.js)
       const _cdBalance = await getCDTokensBalance(provider, address);
-      // get the amount of `Crypto Dev` LP tokens held by the user
+      // get the amount of `Crypto Dev` LP tokens held by the user (utils - getAmounts.js)
       const _lpBalance = await getLPTokensBalance(provider, address);
       // gets the amount of `CD` tokens that are present in the reserve of the `Exchange contract`
+      // no need for EXCHANGE_ADDRESS here as .getReserve() is coded to call balanceOf(address(this))
       const _reservedCD = await getReserveOfCDTokens(provider);
-      // Get the ether reserves in the contract
+      // Get the ether reserves in the contract (utils - getAmounts.js)
+      // 'address' was exclusively for the user - here null
+      // getEtherBalance() alrerdy has this EXCHANGE_CONTRACT_ADDRESS
       const _ethBalanceContract = await getEtherBalance(provider, null, true);
+      // ----------------------
       setEtherBalance(_ethBalance);
       setCDBalance(_cdBalance);
       setLPBalance(_lpBalance);
       setReservedCD(_reservedCD);
-      setReservedCD(_reservedCD);
+      // setReservedCD(_reservedCD);
       setEtherBalanceContract(_ethBalanceContract);
-    } catch (err) {
+    } 
+    catch (err) {
       console.error(err);
     }
   };
@@ -118,27 +128,38 @@ export default function Home() {
   /**** SWAP FUNCTIONS ****/
 
   /**
-   * swapTokens: Swaps  `swapAmountWei` of Eth/Crypto Dev tokens with `tokenToBeReceivedAfterSwap` amount of Eth/Crypto Dev tokens.
+   * swapTokens: Swaps  `swapAmountWei` of Eth/Crypto Dev tokens with `tokenToBeReceivedAfterSwap`(MINIMUM amount for comparison, not ACTUAL AMOUNT)... 
+   * amount of Eth/Crypto Dev tokens.
    */
   const _swapTokens = async () => {
     try {
       // Convert the amount entered by the user to a BigNumber using the `parseEther` library from `ethers.js`
+      // 'swapAmount' has been entered by the user on UI...
+      // and is a React state var. init to ""
+      // User always enter ful token amount BUT we have to convert it to wei (BigNumber) via parseEther(string)
+      // As parseEther() takes a string as an arg. (and converts to BigNo. = wei representation of input ether)...
+      // we have to init. swapAmount as a string (empty one)
       const swapAmountWei = utils.parseEther(swapAmount);
       // Check if the user entered zero
       // We are here using the `eq` method from BigNumber class in `ethers.js`
       if (!swapAmountWei.eq(zero)) {
+        // if non-zero, get a setter for txn
         const signer = await getProviderOrSigner(true);
         setLoading(true);
         // Call the swapTokens function from the `utils` folder
+        // FLOW: internally call Exchange.sol's either of the 2 swap f():
+        // ethToCDSwap() OR [.approve() and CDToEthSwap()]
         await swapTokens(
-          signer,
+          signer,     // signer needed to call txn: ethToCDSwap() OR .approve() & CDToEthSwap()
           swapAmountWei,
           tokenToBeReceivedAfterSwap,
           ethSelected
         );
         setLoading(false);
-        // Get all the updated amounts after the swap
+        // Get all the updated amounts after the swap...
+        // and set all the React State vars.
         await getAmounts();
+        // re-init ReactSV swapAmount to "" if the same user wants to re-run swap f() on UI, maybe in the same session
         setSwapAmount("");
       }
     } catch (err) {
@@ -155,6 +176,7 @@ export default function Home() {
   const _getAmountOfTokensReceivedFromSwap = async (_swapAmount) => {
     try {
       // Convert the amount entered by the user to a BigNumber using the `parseEther` library from `ethers.js`
+      // _swapAmount = e.target.value
       const _swapAmountWEI = utils.parseEther(_swapAmount.toString());
       // Check if the user entered zero
       // We are here using the `eq` method from BigNumber class in `ethers.js`
@@ -162,7 +184,7 @@ export default function Home() {
         const provider = await getProviderOrSigner();
         // Get the amount of ether in the contract
         const _ethBalance = await getEtherBalance(provider, null, true);
-        // Call the `getAmountOfTokensReceivedFromSwap` from the utils folder
+        // Call the `getAmountOfTokensReceivedFromSwap` from the utils -> swap.js folder
         const amountOfTokens = await getAmountOfTokensReceivedFromSwap(
           _swapAmountWEI,
           provider,
@@ -185,25 +207,31 @@ export default function Home() {
 
   /**
    * _addLiquidity helps add liquidity to the exchange,
-   * If the user is adding initial liquidity, user decides the ether and CD tokens he wants to add
-   * to the exchange. If he is adding the liquidity after the initial liquidity has already been added
+   * CASE # 1: If the user is adding initial liquidity, user decides the ether and CD tokens he wants to add
+   * to the exchange. 
+   * CASE # 2: If he is adding the liquidity after the initial liquidity has already been added
    * then we calculate the crypto dev tokens he can add, given the Eth he wants to add by keeping the ratios
-   * constant
+   * constant to avoid a large impact on the pricing of the assets.
    */
   const _addLiquidity = async () => {
     try {
       // Convert the ether amount entered by the user to Bignumber
+      // as user would ALWAYS enter the full-token amount he wants to add
+      // it's we who will have to convert it to BigNNumber equivalent in wei to process in our codes
       const addEtherWei = utils.parseEther(addEther.toString());
-      // Check if the values are zero
+      // Check if the CD Token and ETH values are zero
       if (!addCDTokens.eq(zero) && !addEtherWei.eq(zero)) {
+        // if non-zero, then ready for the txn using signer
         const signer = await getProviderOrSigner(true);
         setLoading(true);
         // call the addLiquidity function from the utils folder
         await addLiquidity(signer, addCDTokens, addEtherWei);
         setLoading(false);
         // Reinitialize the CD tokens
-        setAddCDTokens(zero);
-        // Get amounts for all values after the liquidity has been added
+        setAddCDTokens(zero);   // why not setAddEther(zero) alongwith ?
+
+        // Get (and also set React SV as all values change) amounts for all values...
+        // after the liquidity has been added
         await getAmounts();
       } else {
         setAddCDTokens(zero);
@@ -226,15 +254,24 @@ export default function Home() {
   const _removeLiquidity = async () => {
     try {
       const signer = await getProviderOrSigner(true);
+      // setter 
+
       // Convert the LP tokens entered by the user to a BigNumber
       const removeLPTokensWei = utils.parseEther(removeLPTokens);
       setLoading(true);
+      
+      // Must check if the value entered is non-zero likewise we checked for...
+      // addLiquidity() and swapTokens()
+
       // Call the removeLiquidity function from the `utils` folder
       await removeLiquidity(signer, removeLPTokensWei);
       setLoading(false);
+      // set all ReactSV as all values got changed upon removing Liq.
       await getAmounts();
-      setRemoveCD(zero);
+
+      setRemoveCD(zero);      
       setRemoveEther(zero);
+
     } catch (err) {
       console.error(err);
       setLoading(false);
@@ -245,27 +282,33 @@ export default function Home() {
 
   /**
    * _getTokensAfterRemove: Calculates the amount of `Ether` and `CD` tokens
-   * that would be returned back to user after he removes `removeLPTokenWei` amount
+   * that would be returned back to user after he removes/redeems `removeLPTokenWei` amount
    * of LP tokens from the contract
    */
   const _getTokensAfterRemove = async (_removeLPTokens) => {
     try {
+      // getter - used to just display both the values
       const provider = await getProviderOrSigner();
       // Convert the LP tokens entered by the user to a BigNumber
+      // as user will only enter full-token amount BUT we'll convert it to wei (BigNo.) to use inside the code
       const removeLPTokenWei = utils.parseEther(_removeLPTokens);
       // Get the Eth reserves within the exchange contract
       const _ethBalance = await getEtherBalance(provider, null, true);
       // get the crypto dev token reserves from the contract
       const cryptoDevTokenReserve = await getReserveOfCDTokens(provider);
       // call the getTokensAfterRemove from the utils folder
+
+      // Object Destructuring of JS, below: 2 return values
       const { _removeEther, _removeCD } = await getTokensAfterRemove(
         provider,
         removeLPTokenWei,
         _ethBalance,
         cryptoDevTokenReserve
       );
-      setRemoveEther(_removeEther);
-      setRemoveCD(_removeCD);
+        // set both the ReactSV of removeCD and removeEth
+      setRemoveEther(_removeEther);   // => removeEther set after calculation inside getTokensAfterRemove() - Golden Ratio
+      setRemoveCD(_removeCD);         // => removeCD set after calculation inside getTokensAfterRemove() - Golden Ratio
+
     } catch (err) {
       console.error(err);
     }
@@ -318,6 +361,7 @@ export default function Home() {
 
     if (needSigner) {
       const signer = web3Provider.getSigner();
+      // web3provider is definitely a provider but has a signer as well, if need be
       return signer;
     }
     return web3Provider;
@@ -337,12 +381,13 @@ export default function Home() {
         disableInjectedProvider: false,
       });
       connectWallet();
+      // getAmounts() also called right at the initial / walletConnect instance
       getAmounts();
     }
   }, [walletConnected]);
 
   /*
-      renderButton: Returns a button based on the state of the dapp
+      renderButton: RETURNS A BUTTON based on the state of the dapp
   */
   const renderButton = () => {
     // If wallet is not connected, return a button which allows them to connect their wllet
@@ -373,9 +418,16 @@ export default function Home() {
             {utils.formatEther(lpBalance)} Crypto Dev LP tokens
           </div>
           <div>
-            {/* If reserved CD is zero, render the state for liquidity zero where we ask the user
-            how much initial liquidity he wants to add else just render the state where liquidity is not zero and
-            we calculate based on the `Eth` amount specified by the user how much `CD` tokens can be added */}
+
+            {/* CASE # 1: Zero Liquidity added: 
+            If reserved CD is zero, render the state for liquidity zero where we ask the user
+            how much initial liquidity he wants to add else...
+
+            CASE # 2: Liquidity already added:
+            just render the state where liquidity is not zero and
+            we calculate based on the `Eth` amount specified by the user how much `CD` tokens can be added 
+            utils.parseEther(reservedCD.toString()) is a BigNUmber now and will need .eq() */}
+
             {utils.parseEther(reservedCD.toString()).eq(zero) ? (
               <div>
                 <input
@@ -407,6 +459,7 @@ export default function Home() {
                     setAddEther(e.target.value || "0");
                     // calculate the number of CD tokens that
                     // can be added given  `e.target.value` amount of Eth
+                    // _addCDTokens came from calc. and is a BigNo., later formatEther()
                     const _addCDTokens = await calculateCD(
                       e.target.value || "0",
                       etherBalanceContract,
@@ -431,15 +484,16 @@ export default function Home() {
                 type="number"
                 placeholder="Amount of LP Tokens"
                 onChange={async (e) => {
-                  setRemoveLPTokens(e.target.value || "0");
+                  setRemoveLPTokens(e.target.value || "0");   // action on buttonClick
                   // Calculate the amount of Ether and CD tokens that the user would receive
                   // After he removes `e.target.value` amount of `LP` tokens
-                  await _getTokensAfterRemove(e.target.value || "0");
+                  await _getTokensAfterRemove(e.target.value || "0"); // text display
                 }}
                 className={styles.input}
               />
               <div className={styles.inputDiv}>
                 {/* Convert the BigNumber to string using the formatEther function from ethers.js */}
+                {/* the same ReactSV set by setters inside _getTokensAfterRemove are displayed below */}
                 {`You will get ${utils.formatEther(removeCD)} Crypto
               Dev Tokens and ${utils.formatEther(removeEther)} Eth`}
               </div>
@@ -450,7 +504,9 @@ export default function Home() {
           </div>
         </div>
       );
-    } else {
+    }
+    // if(!liquidityTab) => means that's a Swap tab clicked by user
+    else {
       return (
         <div>
           <input
@@ -471,7 +527,7 @@ export default function Home() {
             onChange={async () => {
               setEthSelected(!ethSelected);
               // Initialize the values back to zero
-              await _getAmountOfTokensReceivedFromSwap(0);
+              await _getAmountOfTokensReceivedFromSwap(0);  // a getter that sets ReactSV for further processing in the codebase
               setSwapAmount("");
             }}
           >

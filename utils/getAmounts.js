@@ -13,6 +13,8 @@ import {
 // no need to use extcode() to check whether it's a contract
 // just get the input from user as true/false
 // getter
+// however, 'provider' here is just an identifier and not a keyword...
+// can pass in a signer as an arg.
 export const getEtherBalance = async (provider, address, contract = false) => {
   try {
     // If the caller has set the `contract` boolean to true, retrieve the balance of
