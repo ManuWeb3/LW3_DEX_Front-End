@@ -1,3 +1,5 @@
+// Details commented script in G-drive
+
 import { Contract } from "ethers";
 import {
   EXCHANGE_CONTRACT_ABI,

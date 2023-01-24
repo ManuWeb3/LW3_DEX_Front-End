@@ -1,3 +1,5 @@
+// Details commented script in G-drive
+
 import { BigNumber, providers, utils } from "ethers";
 import Head from "next/head";
 import React, { useEffect, useRef, useState } from "react";
